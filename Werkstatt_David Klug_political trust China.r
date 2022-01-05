@@ -1,0 +1,491 @@
+######################################################
+#
+#    Political trust in national government in China
+#    am empirical analysis using data by the Asian Barometer Survey
+#
+#    R script
+#    
+#####################################################@
+
+
+
+# Environment preparation ------------------------------------------------------------
+
+# Clearing memory, setting language to English
+rm(list = ls())
+Sys.setenv(LANG = "en")
+setwd(here::here())
+
+# Loading packages
+packages <- c(
+  "haven", #reading SPSS data
+  "readr", #dependency of haven
+  "here", #setting wd dynamically to root of current R project file. thus requires the use of RStudio projects alongside this script
+  "dplyr", #data manipulation
+  "Hmisc", #necessary for label() due to SPSS data
+  "ggplot2", #used for plots
+  "labelled", #necessary to remove labels
+  "naniar", #replacing specific values with NA
+  "data.table", #used for the setnames() function
+  "psych", #package necessary for the reverse.code() function
+  "flextable", #used to create summary table and to convert tables to docx
+  "gtsummary", #used to create summary tables
+  "stargazer" #used to create regression tables
+) 
+
+
+installed_packages <- packages %in% rownames(installed.packages())
+
+if (any(installed_packages == FALSE)) { # Install packages not yet installed
+  install.packages(packages[!installed_packages])
+}
+
+lapply(packages, library, character.only = TRUE) # Packages loading
+
+
+
+# Loading and preparing Asian Barometer Survey data ------------------------------------------------------------
+abs_wave1 <- read_sav(here("data_ABS", "ABSdata_PRC_wave1", "Mainland v4.2.sav"))
+abs_wave2 <- read_sav(here("data_ABS", "ABSdata_PRC_wave2", "04_China.sav")) 
+abs_wave3 <- read_sav(here("data_ABS", "ABSdata_PRC_wave3", "ABS3w.CN.sav"))
+abs_wave4 <- read_sav(here("data_ABS", "ABSdata_PRC_wave4", "W4_China_merged20181206.SAV"))
+
+# View(abs_wave1)
+# View(abs_wave2)
+# View(abs_wave3)
+# View(abs_wave4)
+
+
+# Data transformation functions -------------------------------------------
+
+#note that this function will only work on matrices, it will NOT work on data frames
+rev <- function(data,variable) {
+  data <- psych::reverse.code(
+    keys = variable, 
+    items = data)#, 
+    #mini = min(data[,variable]), #apparently, reverse.code() finds this by default, but I will keep the code here
+    #maxi = max(data[,variable])) #apparently, reverse.code() finds this by default, but I will keep the code here
+  colnames(data)[which(colnames(data) == paste0(variable,"-"))] <- variable
+  return(data)
+}
+
+#supply a dataframe (data_list) and a CHARACTER vector (variable_list) that contains all the names of the vars to be reversed
+rev_list <- function(data_list,variable_list,data,variable,log=TRUE) {
+  for (item in variable_list) {
+    data_list <- rev(
+      data=data_list,
+      variable=item)
+    if(log==TRUE){
+      print(paste0(
+        "Variable reversed: ", item, " (range is ", min(data_list[,item], na.rm = TRUE),  ":", max(data_list[,item], na.rm = TRUE), ")"
+      ))}
+    next
+  }
+  return(data_list)
+}
+
+rplc_NA <- function(data_list, variable_list, values,log=TRUE) {
+  for (item in variable_list) {
+    data_list <- naniar::replace_with_na(data_list, replace = list(item = values))
+    if(log==TRUE){
+      print(paste0(
+        "NA inserted for: ", item, " with values ", values
+      ))}
+    next
+  }
+}
+
+# Time-series analysis: variable preparation -------------------------------------------
+
+#these next few lines import the political trust variable from abs wave 1, 2, 3, and 4 respectively
+#abs3 and 4 need to be recoded to match the rising likert scale of the other two variables
+
+#first variable
+trust_abs1 <- data.frame(pol_trust = abs_wave1$q008) %>% 
+  remove_labels() %>% 
+  naniar::replace_with_na(replace = list(pol_trust = c(0,98,99)))
+trust_abs1$year = "2002"
+
+#second variable
+trust_abs2 <- data.frame(pol_trust = abs_wave2$q008) %>% 
+  remove_labels() %>% 
+  naniar::replace_with_na(replace = list(pol_trust = c(7,8,9)))
+trust_abs2$year = "2007/8"
+
+#third variable
+trust_abs3 <- data.frame(pol_trust = abs_wave3$q9,
+                         dummy = c(rep(NA,length(abs_wave3$q9)))) %>% #adding a dummy var b/c reverse.code() somehow doesn't work with atomic vectors
+  remove_labels() %>% 
+  naniar::replace_with_na(replace = list(pol_trust = c(7,8,9)))
+trust_abs3 <- rev_list(data_list=trust_abs3, variable_list="pol_trust")
+trust_abs3 <- as.data.frame(trust_abs3)
+trust_abs3$year = "2011"
+trust_abs3 <- trust_abs3[,c(1,3)] #this gets rid of the dummy variable
+
+#fourth variable
+trust_abs4 <- data.frame(pol_trust = abs_wave4$q9,
+                         dummy = c(rep(NA,length(abs_wave4$q9)))) %>% #adding a dummy var b/c reverse.code() somehow doesn't work with atomic vectors
+  remove_labels() %>% 
+  naniar::replace_with_na(replace = list(pol_trust = c(-1,7,8,9))) %>%
+  rev_list(variable_list="pol_trust")
+trust_abs4 <- as.data.frame(trust_abs4)
+trust_abs4$year = "2015/6"
+trust_abs4 <- trust_abs4[,c(1,3)] #this gets rid of the dummy variable
+
+
+# Time-series analysis: data frame creation -------------------------------
+
+
+#The next few lines combine the survey responses to the question about trust in national government
+#After that, some summary statistics are created, such as count or proportion
+#Multiple data frames are created to serve different visualization purposes
+
+#first data frame
+time_series_trust_raw <- rbind(trust_abs1,
+                           trust_abs2,
+                           trust_abs3,
+                           trust_abs4)
+
+#second data frame
+time_series_trust_avg <- time_series_trust_raw %>%
+  group_by(year) %>%
+  summarise(avg = sprintf("%.2f", mean(pol_trust, na.rm = TRUE))) %>%
+  mutate(avg = as.numeric(avg))
+
+#third data frame
+time_series_trust <- time_series_trust_raw %>%
+  group_by(year, pol_trust) %>%
+  summarise(count = n()) %>%
+  left_join(y=time_series_trust_avg, by="year") %>%
+  group_by(year) %>%
+  summarise(pol_trust = pol_trust,
+            count = count,
+            avg = avg,
+            year_total = sum(count),
+            year_prop = count / year_total) %>%
+mutate(
+  dummy = "dummy",
+  avg = avg,
+  year = as.factor(year),
+  pol_trust = factor(recode(pol_trust,
+                            "1" = "no trust at all",
+                            "2" = "not very much trust",
+                            "3" = "quite a lot of trust",
+                            "4" = "a great deal of trust"),
+                     ordered = TRUE,
+                     levels = c(
+                       NA,
+                       "a great deal of trust",
+                       "quite a lot of trust",
+                       "not very much trust",
+                       "no trust at all"),
+                     exclude = NULL
+                     )
+       )
+
+
+# Time-series analysis: visualization -------------------------------------
+
+
+#This creates a table that displays the number of responses
+table_freq <-
+    unclass(
+  table(
+  mutate(time_series_trust_raw, 
+         pol_trust = factor(recode(pol_trust,
+                                   "1" = "no trust at all",
+                                   "2" = "not very much trust",
+                                   "3" = "quite a lot of trust",
+                                   "4" = "a great deal of trust"),
+                            ordered = TRUE,
+                            levels = c(
+                                   NA,
+                                   "a great deal of trust",
+                                   "quite a lot of trust",
+                                   "not very much trust",
+                                   "no trust at all"),
+                            exclude = NULL
+                            )
+         ),
+  useNA="ifany")
+    )
+
+vars <- "missing"
+vars[2:5] <- row.names(table_freq)[2:5]
+vars
+
+table_freq <- as.data.frame(table_freq)
+table_freq$Response <- vars
+table_freq <- table_freq[,c("Response", 
+                            names(table_freq)[names(table_freq) != "Response"])]
+
+rownames(table_freq) <-  NULL
+
+table_freq <- flextable::flextable(table_freq)
+
+
+#This creates a bar plot that visualizes the survey responses across all years
+plot_prop <- ggplot(data=time_series_trust) +
+  geom_bar(mapping=aes(x=year, y=year_prop, fill=pol_trust), stat = "identity", color = "black") +
+  scale_fill_manual(aesthetics="fill", 
+                   values=c(rgb(0.1,0.1,1.0,0.6),
+                            rgb(0.3,0.0,0.7,0.6),
+                            rgb(0.7,0.0,0.4,0.6),
+                            rgb(1.0,0.0,0.2,0.6))) +
+  theme(plot.subtitle = element_text(size = 12),
+        panel.grid.minor = element_line(linetype = "blank"),
+        plot.title = element_text(size = 15)) +labs(title = "Political trust in national government, response breakdown by year",
+                                                    x = NULL, y = "proportion of total survey responses",
+                                                    fill = NULL, subtitle = "data: Asian Barometer Survey, wave 4, 2015/6")
+
+
+
+#This creates a bar plot that visualizes the averages across all years
+plot_trend <- ggplot(data=time_series_trust_avg) +
+  geom_bar(mapping=aes(x=year, y=avg), stat="identity", fill=rgb(0.6,0.6,0.6,0.6)) +
+  geom_text(mapping=aes(x=year, y=avg, label=avg),  position=position_dodge(width=0.9), vjust=2.5, size=6) +
+  coord_cartesian(ylim=c(1,4)) +
+  theme(plot.subtitle = element_text(size = 11),
+        panel.grid.minor = element_line(linetype = "blank"),
+        plot.title = element_text(size = 15)) +labs(title = "Political trust in national government, average survey responses per year",
+                                                    x = NULL, y = "average", subtitle = "data: Asian Barometer Survey, wave 4, 2015/6")
+
+
+
+
+# Regression analysis: data frame creation --------------------------------------------------------------
+
+reg_df <- data.frame(abs_wave4) %>%
+  select(se3_2, se2, se5a, se9, ir13, q1, q41, q118, q155, q161, q62, q57, q49, q148, q76, q81, q24, se7a, q44) %>%
+  cbind(pol_trust = trust_abs4$pol_trust) %>%
+  remove_labels() %>%
+  naniar::replace_with_na_at(.vars = c("se3_2", "se2","ir13"),
+                             condition = ~.x %in% -1) %>%
+  naniar::replace_with_na_at(.vars = "se5a",
+                             condition = ~.x %in% c(-1, 90, 98, 99)) %>%
+  naniar::replace_with_na_at(.vars = "se9",
+                             condition = ~.x %in% c(-1, 9)) %>%
+  naniar::replace_with_na_at(.vars = "se7a",
+                             condition = ~.x %in% c(-1, 0, 8, 9)) %>%
+  naniar::replace_with_na_at(.vars = c("q118", "q44"),
+                             condition = ~.x %in% c(-1, 8, 9)) %>%
+  naniar::replace_with_na_at(.vars = c("q1", "q155", "q161", "q62", "q57", "q148", "q76", "q81", "q24", "q9"),
+                             condition = ~.x %in% c(-1, 7, 8, 9)) %>%
+  naniar::replace_with_na_at(.vars = "q41",
+                             condition = ~.x %in% c(-1, 5, 7, 8, 9)) %>%
+  naniar::replace_with_na_at(.vars = "q49",
+                             condition = ~.x %in% c(-1, 97, 98, 99)) %>%
+  mutate(ir13 = recode(ir13, "1" = "1", "2" = "1", "3" = "1", "4" = "2"),
+         q76 = recode(q76, "1" = "1", "2" = "2.666", "3" = "4"),
+         q81 = recode(q81, "1" = "1", "2" = "4"))
+
+reg_df <- as.data.frame(sapply(reg_df, as.numeric))
+
+reg_df <- rev_list(data_list = reg_df,
+                   variable_list = c("q81",
+                                     "q76",
+                                     "q161",
+                                     "q62",
+                                     "q57",
+                                     "q49",
+                                     "q148",
+                                     "q24",
+                                     "q44",
+                                     "q1"))
+
+reg_df <- as.data.frame(reg_df)
+
+
+setnames(reg_df,
+         old =c(
+             "se3_2", "se2", "se5a", "se9","ir13", #demographic controls
+             "q1", "q41", "q118", "q155", #regime performance
+             "q161", "q62", "q57", #cultural factors
+             "q49", #internet use
+             "q148", "q76", "q81", "q24", "se7a", #self-expression values components
+             "q44" #political interest
+           ),
+         new =c(
+           "age", "female", "education_y", "unemployed","rural", #demographic controls
+           "economic_perf", "healthcare", "corruption", "unfairness_income_dist", #regime performance
+           "patriotism", "respect_for_authority", "allocentric_selfinterest", #cultural factors
+           "internet_use", #internet use
+           "diversity_tolerance", "civic_protest", "free_media", "general_trust", "weak_religiousness", #self-expression values components
+           "pol_interest" #political interest
+         )
+         )
+
+reg_df$sev <- as.numeric(sprintf("%.2f",
+  rowMeans(reg_df[,c("diversity_tolerance", "civic_protest", "free_media", "general_trust", "weak_religiousness")], na.rm=TRUE)))
+
+reg_df <- mutate(reg_df,
+                 moderation_effect = pol_interest*sev)
+
+
+# Regression analysis: model calculation ---------------------------------------------
+
+#the following lines set up name vectors to make the regression syntax tidier
+
+demographic_controls <- c("age", "female", "education_y", "unemployed","rural")
+regime_performance <- c("economic_perf", "healthcare", "corruption", "unfairness_income_dist")
+cultural_factors <- c("patriotism", "respect_for_authority", "allocentric_selfinterest")
+internet_use <- "internet_use"
+sev <- "sev"
+sev_components <- c("diversity_tolerance", "civic_protest", "free_media", "general_trust", "weak_religiousness")
+pol_interest <- "pol_interest"
+moderation_effect <- "moderation_effect"
+pol_trust <- "pol_trust"
+
+m1 <- lm(
+  reformulate(
+    termlabels = c(
+      demographic_controls,
+      regime_performance,
+      cultural_factors,
+      internet_use,
+      sev),
+    response = pol_trust),
+  data = reg_df)
+
+m2 <- lm(
+  reformulate(
+    termlabels = c(
+      demographic_controls,
+      regime_performance,
+      cultural_factors,
+      internet_use,
+      sev,
+      pol_interest),
+    response = pol_trust),
+  data = reg_df)
+
+m3 <- lm(
+  reformulate(
+    termlabels = c(
+      demographic_controls,
+      regime_performance,
+      cultural_factors,
+      internet_use,
+      moderation_effect),
+    response = pol_trust),
+  data = reg_df)
+
+m4 <- lm(
+  reformulate(
+    termlabels = c(
+      demographic_controls,
+      regime_performance,
+      cultural_factors,
+      internet_use,
+      sev,
+      pol_interest,
+      moderation_effect),
+    response = pol_trust),
+  data = reg_df)
+
+m5 <- lm(
+  reformulate(
+    termlabels = c(
+      demographic_controls,
+      regime_performance,
+      cultural_factors,
+      internet_use,
+      sev_components),
+    response = pol_trust),
+  data = reg_df)
+
+m6 <- lm(
+  reformulate(
+    termlabels = c(
+      demographic_controls,
+      regime_performance,
+      cultural_factors,
+      internet_use,
+      sev_components,
+      pol_interest),
+    response = pol_trust),
+  data = reg_df)
+
+
+
+
+# Regression analysis: visualizations -------------------------------------
+
+#this creates a table that summarizes the original, untransformed variables from ABS wave 4
+table_summary0 <- gtsummary::tbl_summary(haven::as_factor(abs_wave4[,c("se3_2", "se2", "se5a", "se9", "ir13", 
+                                                                       "q1", "q41", "q118", "q155", "q161", 
+                                                                       "q62", "q57", "q49", "q148", "q76", 
+                                                                       "q81", "q24", "se7a", "q44", "q9")])) %>%
+  bold_labels()
+
+#this creates a table that summarizes the variables in the regression data frame
+table_summary1 <- gtsummary::tbl_summary(reg_df) %>%
+  bold_labels()
+
+dir.create("./plots")
+
+#this creates a more concise table that summarizes the variables in the regression data frame
+tabe_summary2 <- stargazer::stargazer(reg_df, type="html", out="plots/summary.html", omit.summary.stat = c("p25","p75"), digits=2,
+                     covariate.labels = c(
+                       "Age", "Female", "Formal education years", "Is unemployed","Rural residence",
+                       "Economic performance", "Healthcare", "Corruption", "Unfairness of income distribution",
+                       "Patriotism", "Respect for authority", "Allocentric self-interest",
+                       "Internet use",
+                       "(SEV) Tolerance for diversity", "(SEV) Inclination to civic protest", "(SEV) Preference for free media", "(SEV) Generalized social trust","(SEV) Weak religiousness",
+                       "Political interest",
+                       "Political trust",
+                       "Self-expression values index",
+                       "SE values ✖ political interest"
+                     ))
+
+
+tabe_reg1 <- stargazer::stargazer(m1,m2,m3,m4,
+                     type="html",
+                     title="OLS model, dependent variable: political trust in national government",
+                     out="plots/regression1.html",
+                     dep.var.caption = "",
+                     dep.var.labels.include=FALSE,
+                     single.row = TRUE,
+                     covariate.labels = c(
+                       "Age", "Female", "Formal education years", "Is unemployed","Rural residence",
+                       "Economic performance", "Healthcare", "Corruption", "Unfairness of income distribution",
+                       "Patriotism", "Respect for authority", "Allocentric self-interest",
+                       "Internet use",
+                       "Self-expression values index",
+                       "Political interest",
+                       "SE values * political interest"
+                     ))
+
+table_reg2 <- stargazer::stargazer(m5,m6,
+                     type="html",
+                     title="OLS model, dependent variable: political trust in national government",
+                     out="plots/regression2.html",
+                     dep.var.caption = "",
+                     dep.var.labels.include=FALSE,
+                     single.row = TRUE,
+                     covariate.labels = c(
+                       "Age", "Female", "Formal education years", "Is unemployed","Rural residence",
+                       "Economic performance", "Healthcare", "Corruption", "Unfairness of income distribution",
+                       "Patriotism", "Respect for authority", "Allocentric self-interest",
+                       "Internet use",
+                       "(SEV) Tolerance for diversity", "(SEV) Inclination to civic protest", "(SEV) Preference for free media", "(SEV) Generalized social trust","(SEV) Weak religiousness",
+                       "Political interest"
+                     ))
+
+
+# Plot and table output ---------------------------------------------------
+
+
+table_freq
+plot_prop
+plot_trend
+table_summary1
+
+save_as_docx(table_freq, path="plots/freq.docx")
+ggsave('prop.png', path="./plots", plot=plot_prop, width=7.5, height=5, device="png")
+ggsave('trend.png', path="./plots", plot=plot_trend, width=7.5, height=5, device="png")
+table_summary0 %>% as_flex_table() %>% flextable::save_as_docx(path="plots/summary0.docx")
+table_summary1 %>% as_flex_table() %>% flextable::save_as_docx(path="plots/summary1.docx")
+table_summary2
+table_reg1
+table_reg2
