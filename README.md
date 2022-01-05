@@ -1,5 +1,5 @@
 # Background
- This is an independent research project I conducted in the course "Workshop: society".
+ This is an independent research project I conducted in the course "Workshop: society" at the university of St. Gallen.
  
  It uses all four waves of the Asian Barometer Survey, conducted by the College of Social Sciences, National Taiwan University Hu Fu Center for East Asia Democratic Studies.
  
