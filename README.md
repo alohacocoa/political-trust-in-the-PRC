@@ -1,4 +1,8 @@
-# political trust in the PRC
- A repository storing an R script I created that measues political trust in China.
+# Background
+ This is an independent research project I conducted in the course "Workshop: society".
+ 
+ It uses all four waves of the Asian Barometer Survey, conducted by the College of Social Sciences, National Taiwan University Hu Fu Center for East Asia Democratic Studies.
+ 
+ The data was kindly provided to me by its respective owners and will not be shared here.
 
- Data is not provided as it belongs to Asian Barometer Survey institute.
+![average trust over time](plots/trend.png)
