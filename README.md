@@ -1,2 +1,4 @@
 # political trust in the PRC
- A repository storing an R script I created that measues political trust in China
+ A repository storing an R script I created that measues political trust in China.
+
+ Data is not provided as it belongs to Asian Barometer Survey institute.
