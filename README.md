@@ -3,4 +3,4 @@
 
  Data is not provided as it belongs to Asian Barometer Survey institute.
 
-![average trust over time]plots/trend.png
+![average trust over time](plots/trend.png)
