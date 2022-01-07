@@ -234,9 +234,9 @@ plot_prop <- ggplot(data=time_series_trust) +
                             rgb(1.0,0.0,0.2,0.6))) +
   theme(plot.subtitle = element_text(size = 12),
         panel.grid.minor = element_line(linetype = "blank"),
-        plot.title = element_text(size = 15)) +labs(title = "Political trust in national government, response breakdown by year",
+        plot.title = element_text(size = 15)) +labs(title = "Political trust in national government in China",
                                                     x = NULL, y = "proportion of total survey responses",
-                                                    fill = NULL, subtitle = "data: Asian Barometer Survey, wave 4, 2015/6")
+                                                    fill = NULL, subtitle = "survey response breakdown by year [data: Asian Barometer Survey, waves 1-4]")
 
 
 
@@ -247,8 +247,8 @@ plot_trend <- ggplot(data=time_series_trust_avg) +
   coord_cartesian(ylim=c(1,4)) +
   theme(plot.subtitle = element_text(size = 11),
         panel.grid.minor = element_line(linetype = "blank"),
-        plot.title = element_text(size = 15)) +labs(title = "Political trust in national government, average survey responses per year",
-                                                    x = NULL, y = "average", subtitle = "data: Asian Barometer Survey, wave 4, 2015/6")
+        plot.title = element_text(size = 15)) +labs(title = "Political trust in national government in China",
+                                                    x = NULL, y = "average", subtitle = "average survey responses per year [data: Asian Barometer Survey, waves 1-4]")
 
 
 
@@ -439,7 +439,7 @@ tabe_summary2 <- stargazer::stargazer(reg_df, type="html", out="plots/summary.ht
                      ))
 
 
-tabe_reg1 <- stargazer::stargazer(m1,m2,m3,m4,
+tabe_reg1 <- stargazer::stargazer(m3,m4,m1,m2,
                      type="html",
                      title="OLS model, dependent variable: political trust in national government",
                      out="plots/regression1.html",
@@ -454,7 +454,16 @@ tabe_reg1 <- stargazer::stargazer(m1,m2,m3,m4,
                        "Self-expression values index",
                        "Political interest",
                        "SE values * political interest"
-                     ))
+                       ))
+
+plot_bivariate
+
+a <- c("1" = "not at all interested in politics",
+       "2" = "not very interest in politics", 
+       "3" = "somewhat interest in politics", 
+       "4" = "very interest in politics")
+b <- c("abc","dcgd")
+
 
 table_reg2 <- stargazer::stargazer(m5,m6,
                      type="html",
@@ -473,17 +482,36 @@ table_reg2 <- stargazer::stargazer(m5,m6,
                      ))
 
 
-# Plot and table output ---------------------------------------------------
+plot_bivariate <- ggplot(reg_df, aes(x=sev, y=pol_trust)) +
+  geom_jitter(width=0.1, alpha=0.2) +
+  geom_smooth() +
+  facet_grid(. ~ pol_interest, 
+             labeller=labeller(pol_interest = c("1" = "not at all interested in politics",
+                                                "2" = "not very interested in politics",
+                                                "3" = "somewhat interested in politics",
+                                                "4" = "very interested in politics"))) +
+  theme(plot.subtitle = element_text(size = 13),
+        plot.title = element_text(size = 15, face = "bold")) +
+  labs(title = "Political trust in national government vs. self-expression values",
+       x = "self-expression values index score",
+       y = "political trust", subtitle = "added noise, split by political interest [data: Asian Barometer Survey, wave 4, 2015/6]")
+
+  
+
+
+  # Plot and table output ---------------------------------------------------
 
 
 table_freq
 plot_prop
 plot_trend
 table_summary1
+plot_bivariate
 
 save_as_docx(table_freq, path="plots/freq.docx")
 ggsave('prop.png', path="./plots", plot=plot_prop, width=7.5, height=5, device="png")
 ggsave('trend.png', path="./plots", plot=plot_trend, width=7.5, height=5, device="png")
+ggsave('bivariate.png', path="./plots", plot=plot_bivariate, width=10, height=3.5, device="png")
 table_summary0 %>% as_flex_table() %>% flextable::save_as_docx(path="plots/summary0.docx")
 table_summary1 %>% as_flex_table() %>% flextable::save_as_docx(path="plots/summary1.docx")
 table_summary2
