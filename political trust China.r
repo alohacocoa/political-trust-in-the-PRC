@@ -435,7 +435,7 @@ tabe_summary2 <- stargazer::stargazer(reg_df, type="html", out="plots/summary.ht
                        "Political interest",
                        "Political trust",
                        "Self-expression values index",
-                       "SE values ✖ political interest"
+                       "SE values * political interest"
                      ))
 
 
