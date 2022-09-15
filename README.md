@@ -21,7 +21,7 @@ In answering the first question, this study confirms other research in that it f
 
 In answering the second question, this study finds no significant effect of self-expression values on political trust, neither alone nor in combination with political interest.
 
-Attached below are a plots addressing the first question and a regression table addressing the second.
+Attached below are a plot addressing the first question and a regression table addressing the second.
 
 
 
